@@ -1,0 +1,13 @@
+# Web Framework & Server
+fastapi==0.110.0
+uvicorn==0.27.1
+
+# Data Processing
+pandas==2.2.1
+openpyxl==3.1.2
+
+# API Communication
+requests==2.31.0
+
+# Type Safety
+pydantic==2.6.3
