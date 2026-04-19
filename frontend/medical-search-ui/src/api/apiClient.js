@@ -1,14 +1,18 @@
-import axios from "axios";
+// ./api/apiClient.js
+import axios from 'axios';
 
-const BASE_URL = "http://localhost:8000"; // Ensure this matches your FastAPI port
+const api = axios.create({ baseURL: 'http://127.0.0.1:8000' });
 
-export const fetchInsights = () =>
-    axios.get(`${BASE_URL}/insights`).then((r) => r.data.insights);
+export const fetchInsights = async () => {
+    const res = await api.get('/insights');
+    return res.data.insights;
+};
 
-export const fetchRecommendations = (selectedKeywords, sortBy) =>
-    axios
-        .post(`${BASE_URL}/recommend`, {
-            selected_keywords: selectedKeywords,
-            sort_by: sortBy // New parameter passed to backend [cite: 1104, 1106]
-        })
-        .then((r) => r.data);
+export const fetchRecommendations = async (selectedKeywords, sortBy) => {
+    // Matches the FastAPI Pydantic model: { "selected_keywords": [...] }
+    const res = await api.post('/recommend', {
+        selected_keywords: selectedKeywords,
+        sort_by: sortBy // Make sure FastAPI expects this field
+    });
+    return res.data;
+};

@@ -11,3 +11,4 @@ requests==2.31.0
 
 # Type Safety
 pydantic==2.6.3
+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

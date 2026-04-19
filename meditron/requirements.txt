@@ -1,6 +1,0 @@
-pandas
-openpyxl
-requests
-transformers
-accelerate
-bitsandbytes

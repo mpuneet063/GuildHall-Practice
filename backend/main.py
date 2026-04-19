@@ -11,14 +11,14 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # configure meditron
-token = "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"
+token = "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"
 url = "https://api-inference.huggingface.co/models/meta-llama/Llama-3.1-8B-Instruct"
 headers = {
     "Authorization": f"Bearer {token}",
@@ -72,7 +72,7 @@ def convert_to_days(turnaround_str):
     return None
 
 # load my excel
-df = pd.read_excel("NP_2026_with_details.xlsx")
+df = pd.read_excel("2026_NP_Prices_simple_details.xlsx")
 
 # convert turnaround
 df['Turnaround_Days'] = df['Turnaround'].apply(convert_to_days)

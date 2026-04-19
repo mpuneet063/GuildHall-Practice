@@ -23,12 +23,15 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      // Pass both selected keywords and the sort preference 
-      const data = await fetchRecommendations(selected, sortBy);
+      // FIX: Extract strings before sending to API
+      const keywordStrings = selected.map(item => typeof item === 'object' ? item.value : item);
+
+      const data = await fetchRecommendations(keywordStrings, sortBy);
       setResults(data);
       if (data.length === 0) setError("No matching bundles found.");
-    } catch {
-      setError("Failed to fetch recommendations.");
+    } catch (err) {
+      console.error(err);
+      setError("Failed to fetch recommendations. Ensure backend is running at port 8000.");
     } finally {
       setLoading(false);
     }
