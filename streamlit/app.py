@@ -143,8 +143,8 @@ def get_comparison(top_bundles: list, sort_by: str, required_insights: list):
             )}]
         }],
         "generationConfig": {
-            "maxOutputTokens": 800,
-            "temperature": 0.2 
+            "maxOutputTokens": 3000,
+            "temperature": 0.2 # Lowered temperature for more analytical, less creative output
         }
     }
     
