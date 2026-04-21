@@ -25,7 +25,14 @@ GEMINI_HEADERS = {
 # ==========================================
 @st.cache_data
 def load_and_clean_data():
-    df = pd.read_excel("2026_NP_Prices_simple_details.xlsx")
+    # 1. Get the directory where app.py currently lives
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # 2. Join that directory with your file name
+    file_path = os.path.join(current_dir, "2026_NP_Prices_simple_details.xlsx")
+    
+    # 3. Read the explicitly located file
+    df = pd.read_excel(file_path)
 
     def convert_to_days(turnaround_str):
         if pd.isna(turnaround_str):
