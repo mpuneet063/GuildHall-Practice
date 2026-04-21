@@ -10,6 +10,7 @@ __pycache__/
 
 # Data
 *.xlsx
+!2026_NP_Prices_simple_details.xlsx
 ~$*
 
 .env
