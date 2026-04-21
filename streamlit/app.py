@@ -11,7 +11,12 @@ load_dotenv()
 # ==========================================
 # 1. Gemini API Configuration
 # ==========================================
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if "GEMINI_API_KEY" in st.secrets:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+else:
+    # If not in Streamlit Secrets, fall back to the local .env file
+    load_dotenv()
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # Using gemini-2.5-flash: extremely fast, perfect for medical text reasoning
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
 
