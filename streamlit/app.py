@@ -9,21 +9,32 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==========================================
-# 1. Gemini API Configuration
+# 1. Gemini API Configuration (Debug Mode)
 # ==========================================
+import streamlit as st
+import os
+from dotenv import load_dotenv
+
+# 1. Force the app to tell us where it is looking
 if "GEMINI_API_KEY" in st.secrets:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    st.sidebar.success("✅ Key successfully loaded from Streamlit Cloud Secrets!")
 else:
-    # If not in Streamlit Secrets, fall back to the local .env file
     load_dotenv()
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-# Using gemini-2.5-flash: extremely fast, perfect for medical text reasoning
+    if GEMINI_API_KEY:
+        st.sidebar.info("✅ Key successfully loaded from local .env!")
+    else:
+        st.sidebar.error("❌ CRITICAL: No key found in Secrets OR .env!")
+
+# 2. Stop execution safely if missing
+if not GEMINI_API_KEY:
+    st.warning("Halting execution. Please fix API key configuration.")
+    st.stop()
+
+# 3. Build URL
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-
-GEMINI_HEADERS = {
-    "Content-Type": "application/json"
-}
-
+GEMINI_HEADERS = {"Content-Type": "application/json"}
 
 # ==========================================
 # 2. Data Loading & Pre-processing (Cached)
