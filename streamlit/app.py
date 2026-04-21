@@ -9,16 +9,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==========================================
-# 1. HuggingFace Configuration
+# 1. Gemini API Configuration
 # ==========================================
-HF_TOKEN = os.getenv("HF_TOKEN")
-BASE_URL = "https://api-inference.huggingface.co/models"
-MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
-HF_URL = f"{BASE_URL}/{MODEL_ID}"
-HF_HEADERS = {
-    "Authorization": f"Bearer {HF_TOKEN}",
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Using gemini-2.5-flash: extremely fast, perfect for medical text reasoning
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+
+GEMINI_HEADERS = {
     "Content-Type": "application/json"
 }
+
 
 # ==========================================
 # 2. Data Loading & Pre-processing (Cached)
@@ -28,21 +28,18 @@ def load_and_clean_data():
     df = pd.read_excel("2026_NP_Prices_simple_details.xlsx")
 
     def convert_to_days(turnaround_str):
-        if pd.isna(turnaround_str): 
+        if pd.isna(turnaround_str):
             return None
-        
+
         text = str(turnaround_str).lower().strip()
 
-        # 1. Handle "Same Day" or "1 day" explicitly
         if "same day" in text or "1 day" in text:
-            return 0 # Using 0.5 for same-day parity
-        
-        # 2. Check for Hours first (smallest unit)
+            return 0
+
         if "hrs" in text or "hour" in text:
             num = re.sub(r"[^0-9]", "", text)
             return int(num) / 24 if num.isdigit() else None
 
-        # 3. Check for Days (Range or Single)
         if "days" in text:
             num = re.sub(r"[^0-9\-]", "", text)
             if "-" in num:
@@ -50,22 +47,20 @@ def load_and_clean_data():
                 return (int(parts[0]) + int(parts[1])) / 2
             return int(num) if num.isdigit() else None
 
-        # 4. Check for Weeks
         if "weeks" in text:
             num = re.sub(r"[^0-9\-]", "", text)
             if "-" in num:
                 parts = num.split("-")
                 return (int(parts[0]) + int(parts[1])) * 7 / 2
             return int(num) * 7 if num.isdigit() else None
-            
-        # 5. Check for Months
+
         if "months" in text:
             num = re.sub(r"[^0-9\-]", "", text)
             if "-" in num:
                 parts = num.split("-")
                 return (int(parts[0]) + int(parts[1])) * 30 / 2
             return int(num) * 30 if num.isdigit() else None
-                
+
         return None
 
     df['Turnaround_Days'] = df['Turnaround'].apply(convert_to_days)
@@ -86,43 +81,72 @@ df, all_insights = load_and_clean_data()
 
 
 # ==========================================
-# 3. AI Comparison Agent
+# 3. AI Comparison Agent (Powered by Gemini)
+# ==========================================# ==========================================
+# 3. AI Comparison Agent (Powered by Gemini)
 # ==========================================
-# TODO: Replace this function body with Google ADK call
-def get_comparison(bundle_tests: list):
-    if not bundle_tests:
-        return None
+def get_comparison(top_bundles: list, sort_by: str, required_insights: list):
+    if not top_bundles:
+        return "No combinations available to compare."
 
-    # Single test — no LLM needed, just return its details directly
-    if len(bundle_tests) == 1:
-        return bundle_tests[0].get('Details', 'No details available.')
+    # 1. Structure the data so the LLM can easily perform math/comparisons
+    context_blocks = []
+    for i, bundle in enumerate(top_bundles):
+        context_blocks.append(
+            f"Option {i+1} ({bundle.get('Available Options', 'Unknown')}):\n"
+            f"- Cost: £{bundle.get('Total Cost (in GBP)', 0)} | Turnaround: {bundle.get('Turnaround (Days)', 0)} days\n"
+            f"- Hits: {bundle.get('Covers', '')}\n"
+            f"- Misses: {bundle.get('Misses', 'None')}"
+        )
+    
+    context_str = "\n\n".join(context_blocks)
+    
+    # 2. Dynamically adapt the agent's focus based on the UI toggle
+    priority = "Turnaround Time (speed of results)" if sort_by == "Turnaround" else "Cost-effectiveness (lowest price)"
 
-    context = "\n".join([
-        f"Test {t.get('test code')}: {t.get('Details', 'No details available.')}"
-        for t in bundle_tests
-    ])
-    prompt = (
-        f"As a medical laboratory specialist, compare the following tests and explain "
-        f"their combined diagnostic value in 2-3 sentences:\n\n{context}\n\nComparison:"
-    )
+    # 3. Rigid Prompt Architecture
     payload = {
-        "inputs": prompt,
-        "parameters": {
-            "max_new_tokens": 250,
-            "temperature": 0.3,
-            "top_p": 0.9,
-            "repetition_penalty": 1.1
+        "systemInstruction": {
+            "parts": [{"text": "You are a clinical logistics advisor. Your job is to analyze diagnostic test bundles and help a patient choose the best option based on their specific priorities. Never just define the tests; analyze the trade-offs."}]
+        },
+        "contents": [{
+            "parts": [{"text": (
+                f"The patient needs to test for: {', '.join(required_insights)}.\n"
+                f"They have sorted their search to prioritize: **{priority}**.\n\n"
+                f"Here is the raw data for the top {len(top_bundles)} combinations our algorithm generated:\n"
+                f"{context_str}\n\n"
+                f"Write EXACTLY three bullet points comparing these options. "
+                f"Bullet 1: Analyze the top-ranked option and why it wins based on their priority.\n"
+                f"Bullet 2: Contrast it with the other options regarding what biomarkers are missed or extra costs incurred.\n"
+                f"Bullet 3: Provide a definitive clinical/logistical recommendation.\n"
+                f"Keep the tone professional, objective, and strictly limit the output to these three bullet points."
+            )}]
+        }],
+        "generationConfig": {
+            "maxOutputTokens": 3000,
+            "temperature": 0.2 # Lowered temperature for more analytical, less creative output
         }
     }
-    try:
-        print(f"DEBUG: Target URL is {HF_URL}")
-        response = requests.post(HF_URL, headers=HF_HEADERS, json=payload)
-        result = response.json()
-        return result[0]['generated_text'].split("Comparison:")[-1].strip()
-    except Exception as e:
-        return f"Debug — error: {e} | Raw response: {response.text if 'response' in dir() else 'no response'}"
-
-
+    
+    # 4. Execution with Retry Logic (Assuming you have import time at the top)
+    import time
+    for attempt in range(3):
+        try:
+            response = requests.post(GEMINI_URL, headers=GEMINI_HEADERS, json=payload, timeout=30)
+            if response.status_code == 429:
+                time.sleep(5)
+                continue 
+                
+            response.raise_for_status() 
+            result = response.json()
+            return result['candidates'][0]['content']['parts'][0]['text'].strip()
+            
+        except Exception as e:
+            if attempt == 2:
+                return f"Debug — error: {e} | Raw response: {response.text if 'response' in dir() else 'no response'}"
+# ==========================================
+# 4. Residual-Pruned Set Cover Search
+# ==========================================
 # ==========================================
 # 4. Residual-Pruned Set Cover Search
 # ==========================================
@@ -139,7 +163,28 @@ def find_test_combinations(selected_keywords, sort_by='cost'):
     if relevant_tests.empty:
         return pd.DataFrame(), [], False
 
-    records = relevant_tests.to_dict('records')  # Convert once, outside the loop
+    records = relevant_tests.to_dict('records')
+
+    # --- OPTIMIZATION: PREVENT 503 TIMEOUTS ---
+    # Prune the search space to only use the most efficient tests
+    if len(records) > 45:
+        pruned_records = []
+        seen_codes = set()
+        for req in required_set:
+            req_records = [r for r in records if req in r['_keyword_set']]
+            
+            # Keep top 15 cheapest and top 15 fastest for this specific insight
+            cheap_reqs = sorted(req_records, key=lambda x: x.get('Lab Fee', 9999))[:15]
+            fast_reqs = sorted(req_records, key=lambda x: x.get('Turnaround_Days', 999) or 999)[:15]
+            
+            for r in cheap_reqs + fast_reqs:
+                code = r.get('test code', id(r)) # use id as fallback if no code
+                if code not in seen_codes:
+                    seen_codes.add(code)
+                    pruned_records.append(r)
+        records = pruned_records
+    # ------------------------------------------
+
     valid_bundles = []
     is_partial = False
 
@@ -167,8 +212,6 @@ def find_test_combinations(selected_keywords, sort_by='cost'):
             valid_bundles.append(make_bundle((t,)))
 
     # --- r=2: only pair tests where NEITHER is already a solo 100% solution ---
-    # Rationale: if NP22 alone covers glucose+cholesterol, pairing NP22 with anything
-    # else is redundant and misleading — it implies a second test is needed when it isn't.
     non_solo_records = [t for t in records if t.get('test code') not in solo_full_ids]
     for combo in combinations(non_solo_records, 2):
         combo_insights = set().union(*(t['_keyword_set'] for t in combo))
@@ -176,14 +219,12 @@ def find_test_combinations(selected_keywords, sort_by='cost'):
             valid_bundles.append(make_bundle(combo))
 
     # --- r=3: only form triples from non-solo tests,
-    #          and skip any triple whose 2-test sub-combo already covers 100% ---
+    #          skip any triple whose 2-test sub-combo already covers 100% ---
     for combo in combinations(non_solo_records, 3):
         combo_insights = set().union(*(t['_keyword_set'] for t in combo))
         if required_set.issubset(combo_insights):
-            # Prune: if any pair within this triple already covers 100%, skip
             sub_already_covers = any(
-                required_set.issubset(set().union(*(s['_keyword_set'] for s in sub))
-                )
+                required_set.issubset(set().union(*(s['_keyword_set'] for s in sub)))
                 for sub in combinations(combo, 2)
             )
             if not sub_already_covers:
@@ -236,9 +277,9 @@ sort_by = st.radio(
     options=["Cost", "Turnaround"],
     horizontal=True
 )
-
 if selected_keywords:
     with st.spinner('Calculating best combinations...'):
+        # 1. Fast mathematical combinations (Runs dynamically)
         result_df, combo_records_list, is_partial = find_test_combinations(
             selected_keywords,
             sort_by='turnaround' if sort_by == "Turnaround" else 'cost'
@@ -254,14 +295,22 @@ if selected_keywords:
             st.success(f"Found {len(result_df)} valid test combinations!")
 
         st.dataframe(result_df, use_container_width=True, hide_index=True)
-
         st.divider()
-        st.subheader("🔬 Key Highlights")
-        st.caption("AI-generated summary for the top-ranked combination.")
-        with st.spinner("Generating key highlights..."):
-            top_combo = combo_records_list[0] if combo_records_list else []
-            highlight = get_comparison(top_combo)
-        st.info(highlight)
+        
+        # 2. The Gated LLM Call
+        st.subheader("🔬 Clinical Comparison")
+        st.caption("Generate an AI summary comparing the top options based on your priorities.")
+        
+        if st.button("Get Comparison", type="primary"):
+            with st.spinner("Analyzing bundle trade-offs..."):
+                # Extract the top 3 rows from the dataframe as dictionaries
+                top_3_bundles = result_df.head(3).to_dict('records')
+                
+                # Pass the data, the sorting metric, and the original search terms
+                highlight = get_comparison(top_3_bundles, sort_by, selected_keywords)
+                
+            st.info(highlight)
+            
     else:
         st.warning("No test combinations found. Try reducing your criteria.")
 else:
