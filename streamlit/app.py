@@ -18,14 +18,14 @@ from dotenv import load_dotenv
 # 1. Force the app to tell us where it is looking
 if "GEMINI_API_KEY" in st.secrets:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-    st.sidebar.success("✅ Key successfully loaded from Streamlit Cloud Secrets!")
+    # st.sidebar.success("✅ Key successfully loaded from Streamlit Cloud Secrets!")
 else:
     load_dotenv()
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    if GEMINI_API_KEY:
-        st.sidebar.info("✅ Key successfully loaded from local .env!")
-    else:
-        st.sidebar.error("❌ CRITICAL: No key found in Secrets OR .env!")
+    # if GEMINI_API_KEY:
+    #     # st.sidebar.info("✅ Key successfully loaded from local .env!")
+    # else:
+    #     st.sidebar.error("❌ CRITICAL: No key found in Secrets OR .env!")
 
 # 2. Stop execution safely if missing
 if not GEMINI_API_KEY:
