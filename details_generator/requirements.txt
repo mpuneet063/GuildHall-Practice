@@ -1,6 +1,14 @@
+<<<<<<< HEAD
 pandas
 openpyxl
 requests
 transformers
 accelerate
+=======
+pandas
+openpyxl
+requests
+transformers
+accelerate
+>>>>>>> 0ad4836c5671e960eb832e7122cb58e99245d387
 bitsandbytes

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Web Framework & Server
 fastapi==0.110.0
 uvicorn==0.27.1
@@ -12,3 +13,18 @@ requests==2.31.0
 # Type Safety
 pydantic==2.6.3
 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
+=======
+# Web Framework & Server
+fastapi==0.110.0
+uvicorn==0.27.1
+
+# Data Processing
+pandas==2.2.1
+openpyxl==3.1.2
+
+# API Communication
+requests==2.31.0
+
+# Type Safety
+pydantic==2.6.3
+>>>>>>> 0ad4836c5671e960eb832e7122cb58e99245d387

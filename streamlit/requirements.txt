@@ -1,4 +1,9 @@
 streamlit
 pandas
 openpyxl
+<<<<<<< HEAD
 requests
+=======
+numpy
+re
+>>>>>>> 0ad4836c5671e960eb832e7122cb58e99245d387
