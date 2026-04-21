@@ -3,12 +3,15 @@ import pandas as pd
 import requests
 import re
 from itertools import combinations
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ==========================================
 # 1. HuggingFace Configuration
 # ==========================================
-HF_TOKEN = "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"
-# Keep the base inference URL
+HF_TOKEN = os.getenv("HF_TOKEN")
 BASE_URL = "https://api-inference.huggingface.co/models"
 MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
 HF_URL = f"{BASE_URL}/{MODEL_ID}"
