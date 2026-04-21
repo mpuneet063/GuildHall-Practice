@@ -105,29 +105,26 @@ df, all_insights = load_and_clean_data()
 
 # ==========================================
 # 3. AI Comparison Agent (Powered by Gemini)
-# ==========================================# ==========================================
-# 3. AI Comparison Agent (Powered by Gemini)
 # ==========================================
 def get_comparison(top_bundles: list, sort_by: str, required_insights: list):
     if not top_bundles:
         return "No combinations available to compare."
 
-    # 1. Structure the data so the LLM can easily perform math/comparisons
+    # 1. FIXED: Inject the "Extra" data into the LLM's context
     context_blocks = []
     for i, bundle in enumerate(top_bundles):
         context_blocks.append(
             f"Option {i+1} ({bundle.get('Available Options', 'Unknown')}):\n"
             f"- Cost: £{bundle.get('Total Cost (in GBP)', 0)} | Turnaround: {bundle.get('Turnaround (Days)', 0)} days\n"
             f"- Hits: {bundle.get('Covers', '')}\n"
-            f"- Misses: {bundle.get('Misses', 'None')}"
+            f"- Misses: {bundle.get('Misses', 'None')}\n"
+            f"- Extra (Bonus Biomarkers): {bundle.get('Extra', 'None')}" # <-- Added this line!
         )
     
     context_str = "\n\n".join(context_blocks)
-    
-    # 2. Dynamically adapt the agent's focus based on the UI toggle
     priority = "Turnaround Time (speed of results)" if sort_by == "Turnaround" else "Cost-effectiveness (lowest price)"
 
-    # 3. Rigid Prompt Architecture
+    # 2. UPDATED PROMPT: Tell it how to handle the Extras
     payload = {
         "systemInstruction": {
             "parts": [{"text": "You are a clinical logistics advisor. Your job is to analyze diagnostic test bundles and help a patient choose the best option based on their specific priorities. Never just define the tests; analyze the trade-offs."}]
@@ -140,18 +137,17 @@ def get_comparison(top_bundles: list, sort_by: str, required_insights: list):
                 f"{context_str}\n\n"
                 f"Write EXACTLY three bullet points comparing these options. "
                 f"Bullet 1: Analyze the top-ranked option and why it wins based on their priority.\n"
-                f"Bullet 2: Contrast it with the other options regarding what biomarkers are missed or extra costs incurred.\n"
+                f"Bullet 2: Contrast it with the other options regarding what biomarkers are missed, OR what Extra (bonus) biomarkers are gained for the price difference.\n" # <-- Tweaked this instruction
                 f"Bullet 3: Provide a definitive clinical/logistical recommendation.\n"
                 f"Keep the tone professional, objective, and strictly limit the output to these three bullet points."
             )}]
         }],
         "generationConfig": {
-            "maxOutputTokens": 3000,
-            "temperature": 0.2 # Lowered temperature for more analytical, less creative output
+            "maxOutputTokens": 800,
+            "temperature": 0.2 
         }
     }
     
-    # 4. Execution with Retry Logic (Assuming you have import time at the top)
     import time
     for attempt in range(3):
         try:
@@ -166,11 +162,9 @@ def get_comparison(top_bundles: list, sort_by: str, required_insights: list):
             
         except Exception as e:
             if attempt == 2:
-                return f"Debug — error: {e} | Raw response: {response.text if 'response' in dir() else 'no response'}"
-# ==========================================
-# 4. Residual-Pruned Set Cover Search
-# ==========================================
-# ==========================================
+                return f"Comparison currently unavailable. Please check the table above."
+
+# =========================================
 # 4. Residual-Pruned Set Cover Search
 # ==========================================
 def find_test_combinations(selected_keywords, sort_by='cost'):
