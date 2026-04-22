@@ -160,7 +160,7 @@ def get_comparison(top_bundles: list, sort_by: str, required_insights: list):
                 f"Write EXACTLY three bullet points comparing these options. "
                 f"Bullet 1: Analyze the top-ranked option and why it wins based on their priority.\n"
                 f"Bullet 2: Contrast it with the other options regarding what biomarkers are missed, OR what Extra (bonus) biomarkers are gained for the price difference.\n" # <-- Tweaked this instruction
-                f"Bullet 3: Provide a definitive clinical/logistical recommendation.\n"
+                f"Bullet 3: Provide a concise summary of the trade-offs.\n"
                 f"Keep the tone professional, objective, and strictly limit the output to these three bullet points."
             )}]
         }],
