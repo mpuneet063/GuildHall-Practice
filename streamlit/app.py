@@ -34,8 +34,7 @@ if not GEMINI_API_KEY:
     st.stop()
 
 # 3. Build URL
-# Route the API call to the high-throughput 3.1 Lite model
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={GEMINI_API_KEY}"
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
 GEMINI_HEADERS = {"Content-Type": "application/json"}
 
 # ==========================================
