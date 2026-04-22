@@ -397,7 +397,7 @@ st.divider()
 # --- REPLACED MULTISELECT WITH TEXT INPUT ---
 user_input = st.text_input(
     label="🔍 Search for Biomarkers or Symptoms (comma separated):",
-    placeholder="e.g., cholesterol, syphilis, vitamin d..."
+    placeholder="e.g., cholesterol, glucose, vitamin d..."
 )
 
 sort_by = st.radio(
