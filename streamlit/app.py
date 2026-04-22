@@ -334,7 +334,7 @@ st.divider()
 selected_keywords = st.multiselect(
     label="Type to search and select insights:",
     options=all_insights,
-    placeholder="e.g., cholesterol, syphilis, vitamin d..."
+    placeholder="e.g., cholesterol, lipids, vitamin d..."
 )
 
 sort_by = st.radio(
