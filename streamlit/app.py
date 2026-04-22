@@ -34,7 +34,8 @@ if not GEMINI_API_KEY:
     st.stop()
 
 # 3. Build URL
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+# Change "gemini-2.5-flash" to "gemini-1.5-flash"
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
 GEMINI_HEADERS = {"Content-Type": "application/json"}
 
 # ==========================================
@@ -127,6 +128,7 @@ all_insights_embeddings = generate_biomarker_embeddings(all_insights)
 
 # ==========================================
 # 3. AI Comparison Agent (Powered by Gemini)
+@st.cache_data(show_spinner=False)
 def get_comparison(all_bundles_df, sort_by: str, original_inputs: list, expanded_inputs: list):
     if all_bundles_df is None or all_bundles_df.empty:
         return "No combinations available to compare."
