@@ -243,30 +243,37 @@ def get_comparison(all_bundles_df, sort_by: str, original_inputs: list, expanded
         except Exception as e:
             return f"Debug — error: {e} | Raw response: {response.text if 'response' in dir() else 'no response'}"
 # ==========================================
-# 4. Semantic Search Expansion (k-NN)
+# 4. Semantic Search & Query Mapping (k-NN)
 # ==========================================
-def expand_required_set(user_queries, all_biomarkers, biomarker_embeddings):
+def process_user_query(user_queries, all_biomarkers, biomarker_embeddings):
     """
-    Expands the user's selected biomarkers using k-NN semantic search.
+    Maps raw user text to exact database keys (fixing typos),
+    and expands the search for the AI value comparison.
     """
     model = load_model()
+    exact_matches = set()
     expanded_set = set()
 
     for query in user_queries:
-        # 1. Get embedding of query
+        # 1. Get embedding of the raw text query
         query_vector = model.encode([query])
         
-        # 2 & 3. Calculate cosine similarity
+        # 2 & 3. Calculate cosine similarity against the whole database
         similarities = cosine_similarity(query_vector, biomarker_embeddings)[0]
         
-        # 4. Find matches >= 0.85
-        matched_indices = np.where(similarities >= 0.85)[0]
+        # --- NEW: Fix Typos for the Set Cover Math ---
+        # Find the absolute best match to act as the "Original Input"
+        best_match_idx = np.argmax(similarities)
+        if similarities[best_match_idx] >= 0.50:  # 0.50 threshold catches bad spelling well
+            exact_matches.add(all_biomarkers[best_match_idx])
         
-        # 5. Add to expanded set
+        # --- EXISTING: Expand for the AI Comparison ---
+        # Find all matches >= 0.85
+        matched_indices = np.where(similarities >= 0.85)[0]
         for idx in matched_indices:
             expanded_set.add(all_biomarkers[idx])
             
-    return list(expanded_set)
+    return list(exact_matches), list(expanded_set)
 # ==========================================
 # 5. Residual-Pruned Set Cover Search
 # ==========================================
@@ -378,7 +385,7 @@ def find_test_combinations(selected_keywords, sort_by='cost'):
 
 
 # ==========================================
-# 5. Streamlit UI
+# 6. Streamlit UI
 # ==========================================
 st.set_page_config(page_title="Test finder by Guildhall", layout="wide")
 
@@ -387,10 +394,10 @@ st.markdown("Search for medical insights, and the system will automatically comp
 
 st.divider()
 
-selected_keywords = st.multiselect(
-    label="Type to search and select insights:",
-    options=all_insights,
-    placeholder="e.g., cholesterol, lipids, vitamin d..."
+# --- REPLACED MULTISELECT WITH TEXT INPUT ---
+user_input = st.text_input(
+    label="🔍 Search for Biomarkers or Symptoms (comma separated):",
+    placeholder="e.g., cholesterol, syphilis, vitamin d..."
 )
 
 sort_by = st.radio(
@@ -398,43 +405,54 @@ sort_by = st.radio(
     options=["Cost", "Turnaround"],
     horizontal=True
 )
-if selected_keywords:
-    with st.spinner("Semantically expanding search..."):
-        # 1. Expand the terms via k-NN
-        expanded_search_terms = expand_required_set(
-            user_queries=selected_keywords, 
+
+if user_input:
+    # Clean and split the comma-separated input
+    raw_keywords = [k.strip() for k in user_input.split(',') if k.strip()]
+
+    with st.spinner("Semantically analyzing and mapping your search..."):
+        # 1. Map typos to exact keys AND expand the terms
+        exact_keywords, expanded_search_terms = process_user_query(
+            user_queries=raw_keywords, 
             all_biomarkers=all_insights, 
             biomarker_embeddings=all_insights_embeddings
         )
-        
-    st.info(f"**Expanded search to look for value in:** {', '.join(expanded_search_terms)}")
 
-    with st.spinner('Calculating best combinations...'):
-        # 2. RUN MATH ON ORIGINAL INPUTS ONLY (Prevents slow computation)
-        result_df, combo_records_list, is_partial = find_test_combinations(
-            selected_keywords, # <- Do not put expanded_terms here!
-            sort_by='turnaround' if sort_by == "Turnaround" else 'cost'
-        )
-
-    if result_df is not None and not result_df.empty:
-        st.success(f"Found {len(result_df)} valid test combinations!")
-        st.dataframe(result_df.head(15), use_container_width=True, hide_index=True)
-        st.divider()
-        
-        # 3. The Global AI Comparison
-        st.subheader("🔬 Clinical Comparison")
-        if st.button("Get Comparison", type="primary"):
-            with st.spinner("Analyzing all bundles for optimal value..."):
-                # Pass the ENTIRE dataframe, plus the original and expanded terms
-                highlight = get_comparison(
-                    all_bundles_df=result_df, 
-                    sort_by=sort_by, 
-                    original_inputs=selected_keywords, 
-                    expanded_inputs=expanded_search_terms
-                )
-                
-            st.info(highlight)            
+    # 2. Check if the model failed to understand the user's text
+    if not exact_keywords:
+        st.warning("Could not confidently match those terms to our database. Try checking your spelling or using broader medical terms.")
     else:
-        st.warning("No test combinations found. Try reducing your criteria.")
+        # UI Transparency for the user
+        st.success(f"**Database matched your search to:** {', '.join(exact_keywords)}")
+        if len(expanded_search_terms) > len(exact_keywords):
+            st.info(f"**Expanded AI value search includes:** {', '.join(expanded_search_terms)}")
+
+        with st.spinner('Calculating best combinations...'):
+            # 3. RUN MATH ON EXACT MATCHES ONLY 
+            result_df, combo_records_list, is_partial = find_test_combinations(
+                selected_keywords=exact_keywords, 
+                sort_by='turnaround' if sort_by == "Turnaround" else 'cost'
+            )
+
+        if result_df is not None and not result_df.empty:
+            st.success(f"Found {len(result_df)} valid test combinations!")
+            st.dataframe(result_df.head(15), use_container_width=True, hide_index=True)
+            st.divider()
+            
+            # 4. The Global AI Comparison
+            st.subheader("🔬 Clinical Comparison")
+            if st.button("Get Comparison", type="primary"):
+                with st.spinner("Analyzing all bundles for optimal value..."):
+                    # Pass the ENTIRE dataframe, exact terms, and expanded terms
+                    highlight = get_comparison(
+                        all_bundles_df=result_df, 
+                        sort_by=sort_by, 
+                        original_inputs=exact_keywords, 
+                        expanded_inputs=expanded_search_terms
+                    )
+                    
+                st.info(highlight)            
+        else:
+            st.warning("No test combinations found. Try reducing your criteria.")
 else:
-    st.info("👆 Please select at least one insight from the dropdown above to begin.")
+    st.info("👆 Please type an insight in the search box above to begin.")
