@@ -50,6 +50,10 @@ def load_and_clean_data():
     # 3. Read the explicitly located file
     df = pd.read_excel(file_path)
 
+    # Fix misalignment: The 'Tests' column in the Excel file is shifted down by 1 row 
+    # relative to the 'test code' and 'Test Name' columns.
+    df['Tests'] = df['Tests'].shift(-1)
+
     def convert_to_days(turnaround_str):
         if pd.isna(turnaround_str):
             return None
