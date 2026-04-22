@@ -5,15 +5,16 @@ import re
 from itertools import combinations
 import os
 from dotenv import load_dotenv
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
 load_dotenv()
 
 # ==========================================
 # 1. Gemini API Configuration (Debug Mode)
 # ==========================================
-import streamlit as st
-import os
-from dotenv import load_dotenv
+
 
 # 1. Force the app to tell us where it is looking
 if "GEMINI_API_KEY" in st.secrets:
@@ -39,6 +40,21 @@ GEMINI_HEADERS = {"Content-Type": "application/json"}
 # ==========================================
 # 2. Data Loading & Pre-processing (Cached)
 # ==========================================
+# Load the embedding model ONCE (cached) — this takes 30s on first run, then instant
+@st.cache_resource
+def load_model():
+    return SentenceTransformer("all-MiniLM-L6-v2")
+
+@st.cache_data
+def generate_biomarker_embeddings(df_biomarkers):
+    """
+    df_biomarkers: unique list of all biomarkers in the dataset.
+    """
+    model = load_model()
+    # generate embeddings
+    embeddings = model.encode(df_biomarkers)
+    return embeddings
+
 @st.cache_data
 def load_and_clean_data():
     # 1. Get the directory where app.py currently lives
@@ -53,6 +69,7 @@ def load_and_clean_data():
     # Fix misalignment: The 'Tests' column in the Excel file is shifted down by 1 row 
     # relative to the 'test code' and 'Test Name' columns.
     df['Tests'] = df['Tests'].shift(-1)
+
 
     def convert_to_days(turnaround_str):
         if pd.isna(turnaround_str):
@@ -105,6 +122,7 @@ def load_and_clean_data():
 
 
 df, all_insights = load_and_clean_data()
+all_insights_embeddings = generate_biomarker_embeddings(all_insights)
 
 
 # ==========================================
@@ -168,9 +186,35 @@ def get_comparison(top_bundles: list, sort_by: str, required_insights: list):
             if attempt == 2:
                 return f"Comparison currently unavailable. Please check the table above."
 
-# =========================================
-# 4. Residual-Pruned Set Cover Search
 # ==========================================
+# 4. Semantic Search Expansion (k-NN)
+# ==========================================
+def expand_required_set(user_queries, all_biomarkers, biomarker_embeddings):
+    """
+    Expands the user's selected biomarkers using k-NN semantic search.
+    """
+    model = load_model()
+    expanded_set = set()
+
+    for query in user_queries:
+        # 1. Get embedding of query
+        query_vector = model.encode([query])
+        
+        # 2 & 3. Calculate cosine similarity
+        similarities = cosine_similarity(query_vector, biomarker_embeddings)[0]
+        
+        # 4. Find matches >= 0.85
+        matched_indices = np.where(similarities >= 0.85)[0]
+        
+        # 5. Add to expanded set
+        for idx in matched_indices:
+            expanded_set.add(all_biomarkers[idx])
+            
+    return list(expanded_set)
+# ==========================================
+# 5. Residual-Pruned Set Cover Search
+# ==========================================
+
 def find_test_combinations(selected_keywords, sort_by='cost'):
     if not selected_keywords:
         return None, [], False
@@ -299,10 +343,22 @@ sort_by = st.radio(
     horizontal=True
 )
 if selected_keywords:
+    # --- NEW: Intercept and Expand ---
+    with st.spinner("Semantically expanding search..."):
+        expanded_search_terms = expand_required_set(
+            user_queries=selected_keywords, 
+            all_biomarkers=all_insights, 
+            biomarker_embeddings=all_insights_embeddings
+        )
+        
+    st.info(f"**Expanded search to include:** {', '.join(expanded_search_terms)}")
+    # ---------------------------------
+
     with st.spinner('Calculating best combinations...'):
         # 1. Fast mathematical combinations (Runs dynamically)
+        # Make sure you are passing `expanded_search_terms` here!
         result_df, combo_records_list, is_partial = find_test_combinations(
-            selected_keywords,
+            selected_keywords=expanded_search_terms, 
             sort_by='turnaround' if sort_by == "Turnaround" else 'cost'
         )
 
@@ -324,11 +380,9 @@ if selected_keywords:
         
         if st.button("Get Comparison", type="primary"):
             with st.spinner("Analyzing bundle trade-offs..."):
-                # Extract the top 3 rows from the dataframe as dictionaries
                 top_3_bundles = result_df.head(3).to_dict('records')
-                
-                # Pass the data, the sorting metric, and the original search terms
-                highlight = get_comparison(top_3_bundles, sort_by, selected_keywords)
+                # Note: Pass the original selected_keywords to the LLM so it knows what the patient ACTUALLY asked for
+                highlight = get_comparison(top_3_bundles, sort_by, selected_keywords) 
                 
             st.info(highlight)
             
