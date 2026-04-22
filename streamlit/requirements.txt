@@ -6,3 +6,5 @@ python-dotenv
 openpyxl
 sentence-transformers
 scikit-learn
+torch
+torchvision
