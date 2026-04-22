@@ -1,6 +1,8 @@
 streamlit
 pandas
-openpyxl
+numpy
 requests
-numpy 
 python-dotenv
+openpyxl
+sentence-transformers
+scikit-learn
