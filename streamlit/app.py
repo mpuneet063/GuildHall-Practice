@@ -61,7 +61,7 @@ def load_and_clean_data():
         text = str(turnaround_str).lower().strip()
 
         if "same day" in text or "1 day" in text:
-            return 0
+            return 1
 
         if "hrs" in text or "hour" in text:
             num = re.sub(r"[^0-9]", "", text)
