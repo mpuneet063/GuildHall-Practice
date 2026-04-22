@@ -224,8 +224,7 @@ def get_comparison(all_bundles_df, sort_by: str, original_inputs: list, expanded
             response.raise_for_status() 
             return response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
         except Exception as e:
-            if attempt == 2: return "Comparison currently unavailable."
-
+            return f"Debug — error: {e} | Raw response: {response.text if 'response' in dir() else 'no response'}"
 # ==========================================
 # 4. Semantic Search Expansion (k-NN)
 # ==========================================
