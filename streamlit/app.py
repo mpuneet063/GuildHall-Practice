@@ -215,14 +215,30 @@ def get_comparison(all_bundles_df, sort_by: str, original_inputs: list, expanded
     }
     
     import time
-    for attempt in range(3):
+    
+    max_retries = 3
+    base_sleep_time = 2
+
+    for attempt in range(max_retries):
         try:
             response = requests.post(GEMINI_URL, headers=GEMINI_HEADERS, json=payload, timeout=30)
-            if response.status_code == 429:
-                time.sleep(5)
-                continue 
+            
+            # Catch BOTH Rate Limits (429) and Server Overloads (500, 502, 503, 504)
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt < max_retries - 1:
+                    # Exponential backoff: 2s, then 4s...
+                    sleep_time = base_sleep_time * (2 ** attempt) 
+                    print(f"Server busy (Status {response.status_code}). Retrying in {sleep_time} seconds...")
+                    time.sleep(sleep_time)
+                    continue 
+                else:
+                    response.raise_for_status() # Force the exception on the final failed attempt
+
+            # If successful, raise_for_status does nothing
             response.raise_for_status() 
-            return response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
+            result = response.json()
+            return result['candidates'][0]['content']['parts'][0]['text'].strip()
+            
         except Exception as e:
             return f"Debug — error: {e} | Raw response: {response.text if 'response' in dir() else 'no response'}"
 # ==========================================
