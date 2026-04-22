@@ -127,47 +127,91 @@ all_insights_embeddings = generate_biomarker_embeddings(all_insights)
 
 # ==========================================
 # 3. AI Comparison Agent (Powered by Gemini)
-# ==========================================
-def get_comparison(top_bundles: list, sort_by: str, required_insights: list):
-    if not top_bundles:
+def get_comparison(all_bundles_df, sort_by: str, original_inputs: list, expanded_inputs: list):
+    if all_bundles_df is None or all_bundles_df.empty:
         return "No combinations available to compare."
 
-    # 1. FIXED: Inject the "Extra" data into the LLM's context
-    context_blocks = []
-    for i, bundle in enumerate(top_bundles):
-        context_blocks.append(
-            f"Option {i+1} ({bundle.get('Available Options', 'Unknown')}):\n"
-            f"- Cost: £{bundle.get('Total Cost (in GBP)', 0)} | Turnaround: {bundle.get('Turnaround (Days)', 0)} days\n"
-            f"- Hits: {bundle.get('Covers', '')}\n"
-            f"- Misses: {bundle.get('Misses', 'None')}\n"
-            f"- Extra (Bonus Biomarkers): {bundle.get('Extra', 'None')}" # <-- Added this line!
-        )
+    # --- 1. PYTHON GLOBAL FILTERING (FAST) ---
     
-    context_str = "\n\n".join(context_blocks)
+    # Candidate A: The Baseline (Cheapest/Fastest covering the inputs)
+    # Since the dataframe is already sorted by the Set Cover function
+    candidate_a = all_bundles_df.iloc[0].to_dict()
+    base_cost = candidate_a.get('Total Cost (in GBP)', 0)
+    base_time = candidate_a.get('Turnaround (Days)', 0)
+
+    # Candidate B: The Value Upgrade (Within 20% margin, highest similar biomarkers)
+    margin = 1.20 # 20% margin
+    if sort_by.lower() == 'cost':
+        nearby_bundles = all_bundles_df[all_bundles_df['Total Cost (in GBP)'] <= (base_cost * margin)].copy()
+    else:
+        nearby_bundles = all_bundles_df[all_bundles_df['Turnaround (Days)'] <= (base_time * margin)].copy()
+
+    # Identify the "similar" biomarkers we want to hunt for
+    similar_set = set(expanded_inputs) - set(original_inputs)
+
+    def score_value(row):
+        """Scores a bundle based on how many similar biomarkers it includes in its Extras."""
+        hits = 0
+        if pd.notna(row.get('Extra')) and row['Extra'] != '—':
+            extras = [x.strip() for x in row['Extra'].split(',')]
+            hits += len(similar_set.intersection(extras))
+        return hits
+
+    # Score all bundles in the 20% margin
+    nearby_bundles['Value_Score'] = nearby_bundles.apply(score_value, axis=1)
+
+    # Exclude Candidate A from the upgrade search
+    nearby_bundles = nearby_bundles.iloc[1:]
+
+    # Find Candidate B
+    candidate_b = None
+    if not nearby_bundles.empty and nearby_bundles['Value_Score'].max() > 0:
+        # Sort by best value score, then tie-break with cheapest/fastest
+        candidate_b = nearby_bundles.sort_values(
+            by=['Value_Score', 'Total Cost (in GBP)'], 
+            ascending=[False, True]
+        ).iloc[0].to_dict()
+
+    # --- 2. BUILD THE PROMPT ---
+    context_str = (
+        f"Option 1 (Baseline):\n"
+        f"- Tests: {candidate_a.get('Available Options', 'Unknown')}\n"
+        f"- Cost: £{candidate_a.get('Total Cost (in GBP)', 0)} | Turnaround: {candidate_a.get('Turnaround (Days)', 0)} days\n"
+        f"- Hits: {candidate_a.get('Covers', '')}\n"
+        f"- Extra: {candidate_a.get('Extra', 'None')}\n\n"
+    )
+
+    if candidate_b:
+        context_str += (
+            f"Option 2 (Value Upgrade - Covers more similar biomarkers):\n"
+            f"- Tests: {candidate_b.get('Available Options', 'Unknown')}\n"
+            f"- Cost: £{candidate_b.get('Total Cost (in GBP)', 0)} | Turnaround: {candidate_b.get('Turnaround (Days)', 0)} days\n"
+            f"- Hits: {candidate_b.get('Covers', '')}\n"
+            f"- Extra (Bonus Biomarkers): {candidate_b.get('Extra', 'None')}"
+        )
+    else:
+        context_str += "No secondary option within a 20% price/time margin provides additional similar biomarkers."
+
     priority = "Turnaround Time (speed of results)" if sort_by == "Turnaround" else "Cost-effectiveness (lowest price)"
 
-    # 2. UPDATED PROMPT: Tell it how to handle the Extras
+    # --- 3. CALL GEMINI ---
     payload = {
         "systemInstruction": {
-            "parts": [{"text": "You are a clinical logistics advisor. Your job is to analyze diagnostic test bundles and help a patient choose the best option based on their specific priorities. Never just define the tests; analyze the trade-offs."}]
+            "parts": [{"text": "You are a clinical logistics advisor helping a patient choose diagnostic tests based on trade-offs between cost, speed, and diagnostic coverage."}]
         },
         "contents": [{
             "parts": [{"text": (
-                f"The patient needs to test for: {', '.join(required_insights)}.\n"
-                f"They have sorted their search to prioritize: **{priority}**.\n\n"
-                f"Here is the raw data for the top {len(top_bundles)} combinations our algorithm generated:\n"
-                f"{context_str}\n\n"
-                f"Write EXACTLY three bullet points comparing these options. "
-                f"Bullet 1: Analyze the top-ranked option and why it wins based on their priority.\n"
-                f"Bullet 2: Contrast it with the other options regarding what biomarkers are missed, OR what Extra (bonus) biomarkers are gained for the price difference.\n" # <-- Tweaked this instruction
-                f"Bullet 3: Provide a concise summary of the trade-offs.\n"
-                f"Keep the tone professional, objective, and strictly limit the output to these three bullet points."
+                f"The patient requested testing for: {', '.join(original_inputs)}.\n"
+                f"They also have similar relevant biomarkers: {', '.join(similar_set)}.\n"
+                f"Their priority is **{priority}**.\n\n"
+                f"Here are the mathematically optimal options:\n{context_str}\n\n"
+                f"Write EXACTLY three bullet points:\n"
+                f"1. Acknowledge the baseline option (Option 1) and why it satisfies their inputs.\n"
+                f"2. Analyze Option 2 (if provided), specifically highlighting which 'similar/bonus' biomarkers it adds for the slight increase in price/time.\n"
+                f"3. Provide a direct medical comparison of those two, giving final comments on the trade-offs."
             )}]
         }],
-        "generationConfig": {
-            "maxOutputTokens": 3000,
-            "temperature": 0.2 # Lowered temperature for more analytical, less creative output
-        }
+        "generationConfig": {"maxOutputTokens": 3000, "temperature": 0.2}
     }
     
     import time
@@ -177,14 +221,10 @@ def get_comparison(top_bundles: list, sort_by: str, required_insights: list):
             if response.status_code == 429:
                 time.sleep(5)
                 continue 
-                
             response.raise_for_status() 
-            result = response.json()
-            return result['candidates'][0]['content']['parts'][0]['text'].strip()
-            
+            return response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
         except Exception as e:
-            if attempt == 2:
-                return f"Comparison currently unavailable. Please check the table above."
+            if attempt == 2: return "Comparison currently unavailable."
 
 # ==========================================
 # 4. Semantic Search Expansion (k-NN)
@@ -343,49 +383,41 @@ sort_by = st.radio(
     horizontal=True
 )
 if selected_keywords:
-    # --- NEW: Intercept and Expand ---
     with st.spinner("Semantically expanding search..."):
+        # 1. Expand the terms via k-NN
         expanded_search_terms = expand_required_set(
             user_queries=selected_keywords, 
             all_biomarkers=all_insights, 
             biomarker_embeddings=all_insights_embeddings
         )
         
-    st.info(f"**Expanded search to include:** {', '.join(expanded_search_terms)}")
-    # ---------------------------------
+    st.info(f"**Expanded search to look for value in:** {', '.join(expanded_search_terms)}")
 
     with st.spinner('Calculating best combinations...'):
-        # 1. Fast mathematical combinations (Runs dynamically)
-        # Make sure you are passing `expanded_search_terms` here!
+        # 2. RUN MATH ON ORIGINAL INPUTS ONLY (Prevents slow computation)
         result_df, combo_records_list, is_partial = find_test_combinations(
-            selected_keywords=expanded_search_terms, 
+            selected_keywords, # <- Do not put expanded_terms here!
             sort_by='turnaround' if sort_by == "Turnaround" else 'cost'
         )
 
     if result_df is not None and not result_df.empty:
-        if is_partial:
-            st.warning(
-                "No combination of up to 3 tests covers all selected biomarkers. "
-                "Showing best partial matches (≥ 80% coverage), sorted by most covered first."
-            )
-        else:
-            st.success(f"Found {len(result_df)} valid test combinations!")
-
-        st.dataframe(result_df, use_container_width=True, hide_index=True)
+        st.success(f"Found {len(result_df)} valid test combinations!")
+        st.dataframe(result_df.head(15), use_container_width=True, hide_index=True)
         st.divider()
         
-        # 2. The Gated LLM Call
+        # 3. The Global AI Comparison
         st.subheader("🔬 Clinical Comparison")
-        st.caption("Generate an AI summary comparing the top options based on your priorities.")
-        
         if st.button("Get Comparison", type="primary"):
-            with st.spinner("Analyzing bundle trade-offs..."):
-                top_3_bundles = result_df.head(3).to_dict('records')
-                # Note: Pass the original selected_keywords to the LLM so it knows what the patient ACTUALLY asked for
-                highlight = get_comparison(top_3_bundles, sort_by, selected_keywords) 
+            with st.spinner("Analyzing all bundles for optimal value..."):
+                # Pass the ENTIRE dataframe, plus the original and expanded terms
+                highlight = get_comparison(
+                    all_bundles_df=result_df, 
+                    sort_by=sort_by, 
+                    original_inputs=selected_keywords, 
+                    expanded_inputs=expanded_search_terms
+                )
                 
-            st.info(highlight)
-            
+            st.info(highlight)            
     else:
         st.warning("No test combinations found. Try reducing your criteria.")
 else:
